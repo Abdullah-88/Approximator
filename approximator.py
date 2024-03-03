@@ -21,7 +21,7 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
- # helper functions
+ 
 
 def exists(val):
     return val is not None
@@ -43,7 +43,7 @@ def moore_penrose_iter_pinv(x, iters = 6):
 
     return z
 
-# main attention class
+
 
 class NystromAttention(nn.Module):
     def __init__(
@@ -93,7 +93,7 @@ class NystromAttention(nn.Module):
             if exists(mask):
                 mask = F.pad(mask, (padding, 0), value = False)
 
-        # derive query, keys, values
+       
 
         q, k, v = self.to_qkv(x).chunk(3, dim = -1)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
@@ -113,7 +113,7 @@ class NystromAttention(nn.Module):
         q_landmarks = reduce(q, landmark_einops_eq, 'sum', l = l)
         k_landmarks = reduce(k, landmark_einops_eq, 'sum', l = l)
 
-        # calculate landmark mask, and also get sum of non-masked elements in preparation for masked mean
+        
 
         divisor = l
         if exists(mask):
@@ -121,19 +121,19 @@ class NystromAttention(nn.Module):
             divisor = mask_landmarks_sum[..., None] + eps
             mask_landmarks = mask_landmarks_sum > 0
 
-        # masked mean (if mask exists)
+        
 
         q_landmarks /= divisor
         k_landmarks /= divisor
 
-        # similarities
+       
 
         einops_eq = '... i d, ... j d -> ... i j'
         sim1 = einsum(einops_eq, q, k_landmarks)
         sim2 = einsum(einops_eq, q_landmarks, k_landmarks)
         sim3 = einsum(einops_eq, q_landmarks, k)
 
-        # masking
+        
 
         if exists(mask):
             mask_value = -torch.finfo(q.dtype).max
@@ -141,19 +141,19 @@ class NystromAttention(nn.Module):
             sim2.masked_fill_(~(mask_landmarks[..., None] * mask_landmarks[..., None, :]), mask_value)
             sim3.masked_fill_(~(mask_landmarks[..., None] * mask[..., None, :]), mask_value)
 
-        # eq (15) in the paper and aggregate values
+       
 
         attn1, attn2, attn3 = map(lambda t: t.softmax(dim = -1), (sim1, sim2, sim3))
         attn2_inv = moore_penrose_iter_pinv(attn2, iters)
 
         out = (attn1 @ attn2_inv) @ (attn3 @ v)
 
-        # add depth-wise conv residual of values
+        
 
         if self.residual:
             out += self.res_conv(v)
 
-        # merge and combine heads
+        
 
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
         out = self.to_out(out)
